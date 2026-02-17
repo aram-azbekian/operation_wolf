@@ -11,6 +11,13 @@ body,
   background: radial-gradient(circle at top, #1f1f1f, #000000 70%);
 }
 
+#app {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
 canvas {
   image-rendering: pixelated;
   image-rendering: crisp-edges;

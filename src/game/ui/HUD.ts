@@ -5,10 +5,13 @@ import type { HudState, WeaponKind } from "../types";
 export class HUD {
   private readonly root: Phaser.GameObjects.Container;
   private readonly scoreText: Phaser.GameObjects.Text;
+  private readonly clipText: Phaser.GameObjects.Text;
   private readonly rifleText: Phaser.GameObjects.Text;
   private readonly grenadeText: Phaser.GameObjects.Text;
-  private readonly modeText: Phaser.GameObjects.Text;
+  private readonly civilianText: Phaser.GameObjects.Text;
   private readonly enemyText: Phaser.GameObjects.Text;
+  private readonly vehicleText: Phaser.GameObjects.Text;
+  private readonly modeText: Phaser.GameObjects.Text;
   private readonly damageFill: Phaser.GameObjects.Graphics;
 
   public constructor(scene: Phaser.Scene) {
@@ -22,33 +25,50 @@ export class HUD {
       .text(8, hudY + 3, "SCORE 000000", { fontFamily: "monospace", fontSize: "10px", color: "#f8f9fa" })
       .setDepth(2002);
 
-    const slotXs = [8, 54, 100, 146] as const;
-    const iconKeys = ["ow-icon-rifle", "ow-icon-grenade", "ow-icon-soldier", "ow-icon-jeep"] as const;
+    const slots = [
+      { x: 8, key: "ow-icon-rifle" },
+      { x: 46, key: "ow-icon-rifle" },
+      { x: 84, key: "ow-icon-grenade" },
+      { x: 122, key: "ow-icon-soldier" },
+      { x: 168, key: "ow-icon-soldier" },
+      { x: 206, key: "ow-icon-jeep" }
+    ] as const;
 
-    for (let i = 0; i < slotXs.length; i += 1) {
-      scene.add.rectangle(slotXs[i], hudY + 18, 18, 18, 0x00d9ff).setOrigin(0, 0).setDepth(2001);
-      scene.add.rectangle(slotXs[i], hudY + 18, 18, 18).setOrigin(0, 0).setDepth(2002).setStrokeStyle(1, 0x000000);
+    for (const slot of slots) {
+      scene.add.rectangle(slot.x, hudY + 18, 16, 16, 0x00d9ff).setOrigin(0, 0).setDepth(2001);
+      scene.add.rectangle(slot.x, hudY + 18, 16, 16).setOrigin(0, 0).setDepth(2002).setStrokeStyle(1, 0x000000);
 
-      const key = iconKeys[i];
-      if (scene.textures.exists(key)) {
-        scene.add.image(slotXs[i] + 9, hudY + 27, key).setDepth(2003).setScale(1.5);
+      if (scene.textures.exists(slot.key)) {
+        scene.add.image(slot.x + 8, hudY + 26, slot.key).setDepth(2003).setScale(1.4);
       }
     }
 
+    this.clipText = scene.add
+      .text(26, hudY + 22, "0", { fontFamily: "monospace", fontSize: "10px", color: "#f8f9fa" })
+      .setDepth(2003);
+
     this.rifleText = scene.add
-      .text(30, hudY + 22, "20", { fontFamily: "monospace", fontSize: "10px", color: "#f8f9fa" })
+      .text(64, hudY + 22, "00", { fontFamily: "monospace", fontSize: "10px", color: "#f8f9fa" })
       .setDepth(2003);
 
     this.grenadeText = scene.add
-      .text(76, hudY + 22, "05", { fontFamily: "monospace", fontSize: "10px", color: "#f8f9fa" })
+      .text(102, hudY + 22, "0", { fontFamily: "monospace", fontSize: "10px", color: "#f8f9fa" })
       .setDepth(2003);
 
-    this.modeText = scene.add
-      .text(122, hudY + 22, "R", { fontFamily: "monospace", fontSize: "10px", color: "#f8f9fa" })
+    this.civilianText = scene.add
+      .text(140, hudY + 22, "0", { fontFamily: "monospace", fontSize: "10px", color: "#f8f9fa" })
       .setDepth(2003);
 
     this.enemyText = scene.add
-      .text(170, hudY + 22, "00", { fontFamily: "monospace", fontSize: "10px", color: "#f8f9fa" })
+      .text(186, hudY + 22, "00", { fontFamily: "monospace", fontSize: "10px", color: "#f8f9fa" })
+      .setDepth(2003);
+
+    this.vehicleText = scene.add
+      .text(224, hudY + 22, "00", { fontFamily: "monospace", fontSize: "10px", color: "#f8f9fa" })
+      .setDepth(2003);
+
+    this.modeText = scene.add
+      .text(154, hudY + 22, "R", { fontFamily: "monospace", fontSize: "10px", color: "#f8f9fa" })
       .setDepth(2003);
 
     scene.add
@@ -63,20 +83,26 @@ export class HUD {
       topLine,
       rightLine,
       this.scoreText,
+      this.clipText,
       this.rifleText,
       this.grenadeText,
-      this.modeText,
+      this.civilianText,
       this.enemyText,
+      this.vehicleText,
+      this.modeText,
       this.damageFill
     ]);
   }
 
   public update(state: HudState, activeWeapon: WeaponKind): void {
     this.scoreText.setText(`SCORE ${state.score.toString().padStart(6, "0")}`);
+    this.clipText.setText(Math.ceil(state.rifleAmmo / 10).toString());
     this.rifleText.setText(state.rifleAmmo.toString().padStart(2, "0"));
-    this.grenadeText.setText(state.grenadeAmmo.toString().padStart(2, "0"));
-    this.modeText.setText(activeWeapon === "rifle" ? "R" : "G");
+    this.grenadeText.setText(state.grenadeAmmo.toString());
+    this.civilianText.setText(state.civiliansLost.toString());
     this.enemyText.setText(state.enemiesRemaining.toString().padStart(2, "0"));
+    this.vehicleText.setText(state.vehiclesRemaining.toString().padStart(2, "0"));
+    this.modeText.setText(activeWeapon === "rifle" ? "R" : "G");
 
     const damage = Phaser.Math.Clamp(state.damagePercent, 0, MAX_DAMAGE);
     const width = Math.floor((damage / 100) * 176);

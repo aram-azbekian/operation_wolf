@@ -1,5 +1,5 @@
 import type { InputSnapshot, WeaponKind } from "../types";
-import { WEAPONS } from "../data/constants";
+import { FIRE_HIT_RADIUS, GRENADE_HIT_RADIUS, WEAPONS } from "../data/constants";
 import { GameState } from "./GameState";
 
 export type FiredShot = {
@@ -59,7 +59,7 @@ export class WeaponSystem {
     return {
       kind,
       damage: config.damage,
-      radius: kind === "rifle" ? 16 : 30
+      radius: kind === "rifle" ? FIRE_HIT_RADIUS : GRENADE_HIT_RADIUS
     };
   }
 }

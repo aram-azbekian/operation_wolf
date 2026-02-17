@@ -27,7 +27,7 @@ describe("WeaponSystem", () => {
     const shot2 = system.update(input, state);
     expect(shot2.length).toBe(0);
 
-    for (let i = 0; i < 4; i += 1) {
+    for (let i = 0; i < 10; i += 1) {
       state.advanceFrame();
     }
 

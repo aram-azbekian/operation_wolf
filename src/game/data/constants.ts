@@ -7,17 +7,17 @@ export const TARGET_FPS = 60;
 export const STAGE_1_LENGTH_FRAMES = TARGET_FPS * 90;
 
 export const CROSSHAIR_SPEED = 170;
-export const FIRE_HIT_RADIUS = 16;
-export const GRENADE_HIT_RADIUS = 28;
+export const FIRE_HIT_RADIUS = 7;
+export const GRENADE_HIT_RADIUS = 18;
 
 export const MAX_DAMAGE = 100;
-export const DAMAGE_PER_ENEMY_SHOT = 4;
+export const DAMAGE_PER_ENEMY_SHOT = 2;
 
 export const WEAPONS: Record<string, WeaponConfig> = {
   rifle: {
     id: "rifle",
     label: "RIFLE",
-    fireIntervalFrames: 4,
+    fireIntervalFrames: 10,
     ammoCap: 300,
     damage: 1,
     spread: 0

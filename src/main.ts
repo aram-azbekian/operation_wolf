@@ -17,10 +17,23 @@ const game = new Phaser.Game({
     forceSetTimeOut: true
   },
   scale: {
-    mode: Phaser.Scale.FIT,
-    autoCenter: Phaser.Scale.CENTER_BOTH
+    mode: Phaser.Scale.NONE
   },
   scene: [BootScene, TitleScene, MissionScene]
 });
+
+const applyIntegerCanvasScale = (): void => {
+  const canvas = game.canvas as HTMLCanvasElement | null;
+  if (!canvas) {
+    return;
+  }
+
+  const integerScale = Math.max(1, Math.floor(Math.min(window.innerWidth / GAME_WIDTH, window.innerHeight / GAME_HEIGHT)));
+  canvas.style.width = `${GAME_WIDTH * integerScale}px`;
+  canvas.style.height = `${GAME_HEIGHT * integerScale}px`;
+};
+
+applyIntegerCanvasScale();
+window.addEventListener("resize", applyIntegerCanvasScale);
 
 (window as Window & { __owGame?: Phaser.Game }).__owGame = game;

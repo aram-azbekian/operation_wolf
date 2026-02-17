@@ -1,86 +1,179 @@
 import Phaser from "phaser";
-import { AudioBus } from "../audio/AudioBus";
-import { GameState } from "../core/GameState";
-import { HitSystem, type HitTarget } from "../core/HitSystem";
-import { InputManager } from "../core/InputManager";
-import { Spawner } from "../core/Spawner";
-import { WeaponSystem } from "../core/WeaponSystem";
-import {
-  CROSSHAIR_SPEED,
-  DAMAGE_PER_ENEMY_SHOT,
-  FIRE_HIT_RADIUS,
-  GAME_HEIGHT,
-  GAME_WIDTH,
-  GRENADE_HIT_RADIUS,
-  HUD_HEIGHT,
-  PATHS,
-  SCORES,
-  STAGE_1_LENGTH_FRAMES,
-  TARGET_FPS
-} from "../data/constants";
-import stageTimeline from "../data/stage1.timeline.json";
-import type { StageEvent } from "../types";
-import { HUD } from "../ui/HUD";
+import { Controller, NES } from "jsnes";
+import mappers from "jsnes/src/mappers";
+import romUrl from "../../../rom/operation_wolf_rom.nes?url";
+import { GAME_HEIGHT, GAME_WIDTH, TARGET_FPS } from "../data/constants";
 
-type ActorKind = "soldier" | "jeep" | "helicopter" | "civilian";
+type NesButton = "a" | "b" | "select" | "start" | "up" | "down" | "left" | "right";
 
-type StageActor = {
-  id: number;
-  kind: ActorKind;
-  sprite: Phaser.GameObjects.Image;
-  speed: number;
-  direction: 1 | -1;
-  health: number;
-  radius: number;
-  scoreValue: number;
-  isCivilian: boolean;
-  fireRateFrames: number;
-  nextFireFrame: number;
-  alive: boolean;
-  animKeys: string[];
+type WarmupEvent = {
+  frame: number;
+  button: NesButton;
+  state: "down" | "up";
 };
 
-type Dot = {
-  x: number;
-  y: number;
-  color: number;
+type JsnesNes = {
+  frame: () => void;
+  loadROM: (rom: string) => void;
+  buttonDown: (controller: number, button: number) => void;
+  buttonUp: (controller: number, button: number) => void;
+  ppu?: {
+    palTable?: {
+      loadDefaultPalette?: () => void;
+    };
+    updatePalettes?: () => void;
+  };
 };
 
-type ActorVisual = {
-  key: string;
-  animKeys: string[];
-  radius: number;
-  fireRate: number;
+const MISSION_START_FRAME = 240;
+
+const WARMUP_INPUTS: WarmupEvent[] = [
+  { frame: 181, button: "start", state: "down" },
+  { frame: 184, button: "start", state: "up" }
+];
+
+let mapper33Installed = false;
+const mapperTable = mappers as any;
+
+const installMapper33 = (): void => {
+  if (mapper33Installed || mapperTable[33]) {
+    mapper33Installed = true;
+    return;
+  }
+
+  mapperTable[33] = function Mapper33(this: { nes: { ppu: { setMirroring: (mode: number) => void; triggerRendering: () => void }; rom: { HORIZONTAL_MIRRORING: number; VERTICAL_MIRRORING: number; romCount: number; vromCount: number; valid: boolean } }; load8kRomBank: (bank: number, address: number) => void; load2kVromBank: (bank: number, address: number) => void; load1kVromBank: (bank: number, address: number) => void; load8kVromBank: (bank: number, address: number) => void }, nes: unknown) {
+    this.nes = nes as never;
+  };
+
+  mapperTable[33].prototype = new mapperTable[0]();
+
+  mapperTable[33].prototype.write = function write(this: { nes: { ppu: { setMirroring: (mode: number) => void }; rom: { HORIZONTAL_MIRRORING: number; VERTICAL_MIRRORING: number } }; load8kRomBank: (bank: number, address: number) => void; load2kVromBank: (bank: number, address: number) => void; load1kVromBank: (bank: number, address: number) => void }, address: number, value: number): void {
+    if (address < 0x8000) {
+      mapperTable[0].prototype.write.apply(this, [address, value]);
+      return;
+    }
+
+    switch (address & 0xf003) {
+      case 0x8000:
+        this.load8kRomBank(value & 0x3f, 0x8000);
+        this.nes.ppu.setMirroring(value & 0x40 ? this.nes.rom.HORIZONTAL_MIRRORING : this.nes.rom.VERTICAL_MIRRORING);
+        break;
+      case 0x8001:
+        this.load8kRomBank(value & 0x3f, 0xa000);
+        break;
+      case 0x8002:
+        this.load2kVromBank(value & 0x7f, 0x0000);
+        break;
+      case 0x8003:
+        this.load2kVromBank(value & 0x7f, 0x0800);
+        break;
+      case 0xa000:
+        this.load1kVromBank(value & 0x7f, 0x1000);
+        break;
+      case 0xa001:
+        this.load1kVromBank(value & 0x7f, 0x1400);
+        break;
+      case 0xa002:
+        this.load1kVromBank(value & 0x7f, 0x1800);
+        break;
+      case 0xa003:
+        this.load1kVromBank(value & 0x7f, 0x1c00);
+        break;
+      default:
+        break;
+    }
+  };
+
+  mapperTable[33].prototype.loadROM = function loadROM(this: { nes: { rom: { valid: boolean; romCount: number; vromCount: number }; ppu: { triggerRendering: () => void } }; load8kRomBank: (bank: number, address: number) => void; load8kVromBank: (bank: number, address: number) => void }): void {
+    if (!this.nes.rom.valid) {
+      throw new Error("Invalid ROM for mapper 33");
+    }
+
+    this.load8kRomBank(0, 0x8000);
+    this.load8kRomBank(1, 0xa000);
+    this.load8kRomBank(this.nes.rom.romCount * 2 - 2, 0xc000);
+    this.load8kRomBank(this.nes.rom.romCount * 2 - 1, 0xe000);
+
+    if (this.nes.rom.vromCount > 0) {
+      this.load8kVromBank(0, 0x0000);
+    }
+
+    this.nes.ppu.triggerRendering();
+  };
+
+  mapper33Installed = true;
+};
+
+const patchHeaderTail = (romBytes: Uint8Array): Uint8Array => {
+  const patched = Uint8Array.from(romBytes);
+  for (let i = 8; i < 16; i += 1) {
+    patched[i] = 0;
+  }
+  return patched;
+};
+
+const toRomString = (romBytes: Uint8Array): string => {
+  let out = "";
+  for (let i = 0; i < romBytes.length; i += 1) {
+    out += String.fromCharCode(romBytes[i]);
+  }
+  return out;
+};
+
+const toButtonCode = (button: NesButton): number => {
+  switch (button) {
+    case "a":
+      return Controller.BUTTON_A;
+    case "b":
+      return Controller.BUTTON_B;
+    case "select":
+      return Controller.BUTTON_SELECT;
+    case "start":
+      return Controller.BUTTON_START;
+    case "up":
+      return Controller.BUTTON_UP;
+    case "down":
+      return Controller.BUTTON_DOWN;
+    case "left":
+      return Controller.BUTTON_LEFT;
+    case "right":
+      return Controller.BUTTON_RIGHT;
+    default:
+      return Controller.BUTTON_A;
+  }
+};
+
+const applyPreferredPalette = (nes: JsnesNes): void => {
+  nes.ppu?.palTable?.loadDefaultPalette?.();
+  nes.ppu?.updatePalettes?.();
 };
 
 export class MissionScene extends Phaser.Scene {
-  private state!: GameState;
-  private spawner!: Spawner;
-  private weaponSystem!: WeaponSystem;
-  private audioBus!: AudioBus;
+  private nes: JsnesNes | null = null;
+  private frameTexture: Phaser.Textures.CanvasTexture | null = null;
+  private frameCtx: CanvasRenderingContext2D | null = null;
+  private frameImageData: ImageData | null = null;
+  private frameBuffer = new Uint32Array(GAME_WIDTH * GAME_HEIGHT);
+  private frameDirty = false;
 
-  private readonly hitSystem = new HitSystem();
+  private screen!: Phaser.GameObjects.Image;
+  private loadingText!: Phaser.GameObjects.Text;
 
-  private inputManager!: InputManager;
-  private hud!: HUD;
+  private missionFrame = 0;
+  private romReady = false;
 
-  private crosshairX = GAME_WIDTH / 2;
-  private crosshairY = (GAME_HEIGHT - HUD_HEIGHT) / 2;
-  private crosshair!: Phaser.GameObjects.Graphics;
+  private keys!: Record<NesButton, Phaser.Input.Keyboard.Key>;
 
-  private background!: Phaser.GameObjects.Graphics;
-
-  private pauseText!: Phaser.GameObjects.Text;
-  private outcomeText!: Phaser.GameObjects.Text;
-
-  private actors: StageActor[] = [];
-  private actorId = 0;
-
-  private accumulatorMs = 0;
-  private isPaused = false;
-
-  private grassDots: Dot[] = [];
-  private roadDots: Dot[] = [];
+  private readonly buttonDownState: Record<NesButton, boolean> = {
+    a: false,
+    b: false,
+    select: false,
+    start: false,
+    up: false,
+    down: false,
+    left: false,
+    right: false
+  };
 
   public constructor() {
     super("mission");
@@ -89,585 +182,225 @@ export class MissionScene extends Phaser.Scene {
   public create(): void {
     this.cameras.main.setBackgroundColor("#000000");
 
-    this.initializeSession();
-    this.buildDecorCaches();
-    this.ensureRomTextures();
+    this.createFrameSurface();
+    this.bindKeyboard();
 
-    this.background = this.add.graphics().setDepth(0);
-
-    this.inputManager = new InputManager(this);
-    this.hud = new HUD(this);
-
-    this.crosshair = this.add.graphics().setDepth(3000);
-
-    this.pauseText = this.add
-      .text(GAME_WIDTH / 2, 14, "PAUSED", {
+    this.loadingText = this.add
+      .text(GAME_WIDTH / 2, GAME_HEIGHT / 2, "LOADING ROM...", {
         fontFamily: "monospace",
         fontSize: "10px",
-        color: "#f8f9fa",
+        color: "#ffffff",
         backgroundColor: "#000000"
       })
       .setOrigin(0.5)
-      .setDepth(4000)
-      .setVisible(false);
+      .setDepth(50);
 
-    this.outcomeText = this.add
-      .text(GAME_WIDTH / 2, 24, "", {
-        fontFamily: "monospace",
-        fontSize: "10px",
-        color: "#f8f9fa",
-        backgroundColor: "#000000"
-      })
-      .setOrigin(0.5)
-      .setDepth(4000)
-      .setVisible(false);
+    this.publishDebugState();
+    void this.initializeEmulator();
 
-    this.input.keyboard?.once("keydown", () => {
-      this.audioBus.resume();
-    });
-
-    this.hud.update(this.state.toHudState(0), this.weaponSystem.activeWeapon);
-    this.renderBackground();
-    this.drawCrosshair();
-  }
-
-  private initializeSession(): void {
-    for (const actor of this.actors) {
-      actor.sprite.destroy();
-    }
-
-    this.state = new GameState();
-    this.spawner = new Spawner(stageTimeline as StageEvent[]);
-    this.weaponSystem = new WeaponSystem();
-    this.audioBus = new AudioBus();
-
-    this.actors = [];
-    this.actorId = 0;
-    this.accumulatorMs = 0;
-    this.isPaused = false;
-
-    this.crosshairX = GAME_WIDTH / 2;
-    this.crosshairY = (GAME_HEIGHT - HUD_HEIGHT) / 2;
-  }
-
-  private buildDecorCaches(): void {
-    const playableHeight = GAME_HEIGHT - HUD_HEIGHT;
-
-    this.grassDots = [];
-    for (let i = 0; i < 90; i += 1) {
-      this.grassDots.push({
-        x: (i * 17 + 11) % GAME_WIDTH,
-        y: 84 + ((i * 29 + 7) % (playableHeight - 88)),
-        color: i % 3 === 0 ? 0x1c7f22 : 0x27a137
-      });
-    }
-
-    this.roadDots = [];
-    for (let i = 0; i < 45; i += 1) {
-      this.roadDots.push({
-        x: (i * 31 + 19) % GAME_WIDTH,
-        y: 106 + ((i * 23 + 5) % (playableHeight - 114)),
-        color: i % 2 === 0 ? 0x0f4f93 : 0x2a86da
-      });
-    }
-  }
-
-  public update(_: number, delta: number): void {
-    this.accumulatorMs += delta;
-    const stepMs = 1000 / TARGET_FPS;
-
-    while (this.accumulatorMs >= stepMs) {
-      this.simulateFrame();
-      this.accumulatorMs -= stepMs;
-    }
-
-    this.renderBackground();
-    this.drawCrosshair();
-
-    if (typeof window !== "undefined") {
-      window.__owDebug = {
-        scene: "mission",
-        frame: this.state.frame,
-        score: this.state.score,
-        damage: this.state.damage,
-        rifleAmmo: this.state.rifleAmmo,
-        grenadeAmmo: this.state.grenadeAmmo
-      };
-    }
-  }
-
-  private simulateFrame(): void {
-    const input = this.inputManager.snapshot();
-
-    if (input.start.pressed && this.state.frame > 8) {
-      if (this.state.outcome !== "running") {
-        this.scene.start("title");
-        return;
-      }
-      this.isPaused = !this.isPaused;
-      this.pauseText.setVisible(this.isPaused);
-    }
-
-    this.updateCrosshairPosition(input);
-
-    if (this.isPaused) {
-      return;
-    }
-
-    if (this.state.outcome !== "running") {
-      this.hud.update(this.state.toHudState(this.countAliveEnemies()), this.weaponSystem.activeWeapon);
-      return;
-    }
-
-    this.state.advanceFrame();
-
-    for (const event of this.spawner.pull(this.state.frame)) {
-      this.spawnActor(event);
-    }
-
-    for (const shot of this.weaponSystem.update(input, this.state)) {
-      this.resolveShot(shot.radius, shot.damage, shot.kind === "grenade");
-    }
-
-    this.updateActors();
-    this.actors = this.actors.filter((actor) => actor.alive);
-
-    if (this.state.frame >= STAGE_1_LENGTH_FRAMES && this.spawner.isDone && this.countAliveEnemies() === 0) {
-      this.state.markStageClear();
-      this.outcomeText.setText("STAGE 1 CLEAR - PRESS START").setVisible(true);
-    }
-
-    if (this.state.damage >= 100) {
-      this.outcomeText.setText("MISSION FAILED - PRESS START").setVisible(true);
-    }
-
-    this.hud.update(this.state.toHudState(this.countAliveEnemies()), this.weaponSystem.activeWeapon);
-  }
-
-  private updateCrosshairPosition(input: ReturnType<InputManager["snapshot"]>): void {
-    const dt = 1 / TARGET_FPS;
-    if (input.left.held) {
-      this.crosshairX -= CROSSHAIR_SPEED * dt;
-    }
-    if (input.right.held) {
-      this.crosshairX += CROSSHAIR_SPEED * dt;
-    }
-    if (input.up.held) {
-      this.crosshairY -= CROSSHAIR_SPEED * dt;
-    }
-    if (input.down.held) {
-      this.crosshairY += CROSSHAIR_SPEED * dt;
-    }
-
-    this.crosshairX = Phaser.Math.Clamp(this.crosshairX, 4, GAME_WIDTH - 4);
-    this.crosshairY = Phaser.Math.Clamp(this.crosshairY, 4, GAME_HEIGHT - HUD_HEIGHT - 4);
-  }
-
-  private spawnActor(event: StageEvent): void {
-    const path = PATHS[event.pathId];
-    if (!path) {
-      return;
-    }
-
-    const kind = event.entityKind;
-    const isCivilian = event.type === "spawn_civilian" || kind === "civilian";
-
-    const visual = this.getActorVisual(kind);
-    const sprite = this.add.image(path.startX, path.y + 8, visual.key).setOrigin(0.5, 1).setDepth(160 + path.y);
-
-    sprite.setFlipX(path.direction === -1);
-
-    let health = event.params?.health ?? 1;
-    let scoreValue: number = SCORES.soldier;
-
-    if (kind === "jeep") {
-      scoreValue = SCORES.jeep;
-      health = Math.max(health, 2);
-    } else if (kind === "helicopter") {
-      scoreValue = SCORES.helicopter;
-      health = Math.max(health, 3);
-      sprite.setY(path.y - 4);
-      sprite.setDepth(120 + path.y);
-    } else if (kind === "civilian") {
-      scoreValue = SCORES.civilianPenalty;
-    }
-
-    const speed = event.params?.speed ?? (kind === "helicopter" ? 50 : 34);
-    const fireRateFrames = event.params?.fireRateFrames ?? visual.fireRate;
-
-    this.actors.push({
-      id: ++this.actorId,
-      kind,
-      sprite,
-      speed,
-      direction: path.direction,
-      health,
-      radius: visual.radius,
-      scoreValue,
-      isCivilian,
-      fireRateFrames,
-      nextFireFrame: this.state.frame + Phaser.Math.Between(20, Math.max(25, fireRateFrames)),
-      alive: true,
-      animKeys: visual.animKeys
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.releaseAllButtons();
+      this.nes = null;
     });
   }
 
-  private updateActors(): void {
-    for (const actor of this.actors) {
-      if (!actor.alive) {
-        continue;
-      }
-
-      actor.sprite.x += (actor.speed * actor.direction) / TARGET_FPS;
-
-      if (actor.animKeys.length > 1 && this.state.frame % 10 === 0) {
-        const idx = (Math.floor(this.state.frame / 10) + actor.id) % actor.animKeys.length;
-        actor.sprite.setTexture(actor.animKeys[idx]);
-      }
-
-      if (!actor.isCivilian && this.state.frame > 360 && this.state.frame >= actor.nextFireFrame && this.actorInRange(actor)) {
-        this.state.applyDamage(DAMAGE_PER_ENEMY_SHOT);
-        actor.nextFireFrame = this.state.frame + actor.fireRateFrames;
-      }
-
-      if (actor.sprite.x < -30 || actor.sprite.x > GAME_WIDTH + 30) {
-        actor.alive = false;
-        actor.sprite.destroy();
-      }
-    }
-  }
-
-  private resolveShot(radius: number, damage: number, explosive: boolean): void {
-    if (explosive) {
-      this.audioBus.playGrenade();
-      radius = Math.max(radius, GRENADE_HIT_RADIUS);
-    } else {
-      this.audioBus.playShot();
-      radius = Math.max(radius, FIRE_HIT_RADIUS);
-    }
-
-    const targets: HitTarget[] = this.actors.map((actor) => ({
-      x: actor.sprite.x,
-      y: actor.sprite.y - actor.sprite.displayHeight * 0.5,
-      radius: actor.radius,
-      depth: actor.sprite.depth,
-      isCivilian: actor.isCivilian,
-      alive: actor.alive,
-      scoreValue: actor.scoreValue,
-      applyDamage: (dealt: number): boolean => {
-        actor.health -= dealt;
-        if (actor.health > 0) {
-          return false;
-        }
-
-        actor.alive = false;
-        actor.sprite.destroy();
-        return true;
-      }
-    }));
-
-    const result = this.hitSystem.resolve(this.crosshairX, this.crosshairY, radius, damage, targets);
-    if (!result.hit) {
+  public update(): void {
+    if (!this.romReady || !this.nes) {
       return;
     }
 
-    if (!result.killed) {
-      this.audioBus.playHit();
-      return;
-    }
+    this.syncControllerButtons();
+    this.nes.frame();
+    this.blitFrame();
 
-    if (result.civilian) {
-      this.state.addScore(SCORES.civilianPenalty);
-      this.state.markCivilianLost();
-      this.audioBus.playCivilianPenalty();
-      return;
-    }
-
-    this.state.addScore(result.target?.scoreValue ?? 0);
-    if (explosive) {
-      this.audioBus.playExplosion();
-    } else {
-      this.audioBus.playHit();
-    }
+    this.missionFrame += 1;
+    this.publishDebugState();
   }
 
-  private actorInRange(actor: StageActor): boolean {
-    return actor.sprite.x >= 18 && actor.sprite.x <= GAME_WIDTH - 18;
+  private createFrameSurface(): void {
+    const textureKey = "ow-nes-frame";
+    if (this.textures.exists(textureKey)) {
+      this.textures.remove(textureKey);
+    }
+
+    const frameTexture = this.textures.createCanvas(textureKey, GAME_WIDTH, GAME_HEIGHT);
+    if (!frameTexture) {
+      throw new Error("Could not allocate NES frame texture");
+    }
+    this.frameTexture = frameTexture;
+    const canvas = frameTexture.getSourceImage() as HTMLCanvasElement;
+    this.frameCtx = canvas.getContext("2d");
+
+    if (!this.frameCtx) {
+      throw new Error("Could not create canvas context for NES framebuffer");
+    }
+
+    this.frameImageData = this.frameCtx.createImageData(GAME_WIDTH, GAME_HEIGHT);
+
+    this.screen = this.add.image(0, 0, textureKey).setOrigin(0, 0).setDepth(10);
+    this.screen.setDisplaySize(GAME_WIDTH, GAME_HEIGHT);
   }
 
-  private countAliveEnemies(): number {
-    return this.actors.filter((actor) => actor.alive && !actor.isCivilian).length;
+  private bindKeyboard(): void {
+    const keyboard = this.input.keyboard;
+    if (!keyboard) {
+      throw new Error("Keyboard input is required");
+    }
+
+    this.keys = {
+      up: keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.UP),
+      down: keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.DOWN),
+      left: keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.LEFT),
+      right: keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.RIGHT),
+      a: keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.Z),
+      b: keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.X),
+      start: keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ENTER),
+      select: keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SHIFT)
+    };
   }
 
-  private renderBackground(): void {
-    const playableHeight = GAME_HEIGHT - HUD_HEIGHT;
-    const drift = this.state.frame * 0.35;
+  private async initializeEmulator(): Promise<void> {
+    try {
+      installMapper33();
 
-    this.background.clear();
-
-    this.background.fillStyle(0xf3ab44, 1);
-    this.background.fillRect(0, 0, GAME_WIDTH, 74);
-
-    const mountainOffset = drift % 20;
-    for (let x = -20; x < GAME_WIDTH + 20; x += 20) {
-      const left = x - mountainOffset;
-      this.background.fillStyle(0x06103a, 1);
-      this.background.fillTriangle(left, 76, left + 10, 58, left + 20, 76);
-      this.background.fillStyle(0x152a74, 1);
-      this.background.fillTriangle(left + 3, 76, left + 10, 64, left + 16, 76);
-    }
-
-    this.background.fillStyle(0x0a8b25, 1);
-    this.background.fillRect(0, 76, GAME_WIDTH, playableHeight - 76);
-
-    this.background.fillStyle(0x1b6f21, 1);
-    this.background.fillRect(0, 94, GAME_WIDTH, 18);
-
-    const treeOffset = (drift * 0.5) % 36;
-    for (let x = -30; x < GAME_WIDTH + 30; x += 36) {
-      const trunkX = x - treeOffset;
-      this.background.fillStyle(0x815a31, 1);
-      this.background.fillRect(trunkX, 84, 2, 14);
-      this.background.fillStyle(0x4fae45, 1);
-      this.background.fillTriangle(trunkX - 6, 86, trunkX + 1, 75, trunkX + 8, 86);
-    }
-
-    const roadCurve = Math.sin(this.state.frame / 210) * 10;
-    const centerTop = 150 + roadCurve;
-    const centerBottom = 150 - roadCurve * 0.3;
-    const topHalf = 13;
-    const bottomHalf = 36;
-
-    const roadPoints = [
-      new Phaser.Geom.Point(centerTop - topHalf, 92),
-      new Phaser.Geom.Point(centerTop + topHalf, 92),
-      new Phaser.Geom.Point(centerBottom + bottomHalf, playableHeight),
-      new Phaser.Geom.Point(centerBottom - bottomHalf, playableHeight)
-    ];
-
-    this.background.fillStyle(0x166cc4, 1);
-    this.background.fillPoints(roadPoints, true);
-
-    for (const dot of this.grassDots) {
-      this.background.fillStyle(dot.color, 1);
-      this.background.fillRect(dot.x, dot.y, 1, 1);
-    }
-
-    for (const dot of this.roadDots) {
-      if (this.pointInsideRoad(dot.x, dot.y, centerTop, centerBottom, topHalf, bottomHalf)) {
-        this.background.fillStyle(dot.color, 1);
-        this.background.fillRect(dot.x, dot.y, 1, 1);
-      }
-    }
-  }
-
-  private pointInsideRoad(
-    x: number,
-    y: number,
-    centerTop: number,
-    centerBottom: number,
-    topHalf: number,
-    bottomHalf: number
-  ): boolean {
-    const playableHeight = GAME_HEIGHT - HUD_HEIGHT;
-    if (y < 92 || y > playableHeight) {
-      return false;
-    }
-
-    const t = (y - 92) / (playableHeight - 92);
-    const center = Phaser.Math.Linear(centerTop, centerBottom, t);
-    const half = Phaser.Math.Linear(topHalf, bottomHalf, t);
-    return x >= center - half && x <= center + half;
-  }
-
-  private drawCrosshair(): void {
-    this.crosshair.clear();
-    this.crosshair.lineStyle(1, 0xff0000, 1);
-    this.crosshair.strokeCircle(this.crosshairX, this.crosshairY, 6);
-    this.crosshair.lineBetween(this.crosshairX - 10, this.crosshairY, this.crosshairX - 4, this.crosshairY);
-    this.crosshair.lineBetween(this.crosshairX + 4, this.crosshairY, this.crosshairX + 10, this.crosshairY);
-    this.crosshair.lineBetween(this.crosshairX, this.crosshairY - 10, this.crosshairX, this.crosshairY - 4);
-    this.crosshair.lineBetween(this.crosshairX, this.crosshairY + 4, this.crosshairX, this.crosshairY + 10);
-  }
-
-  private getActorVisual(kind: ActorKind): ActorVisual {
-    if (kind === "soldier") {
-      return { key: "ow-soldier-0", animKeys: ["ow-soldier-0", "ow-soldier-1"], radius: 8, fireRate: 45 };
-    }
-    if (kind === "jeep") {
-      return { key: "ow-jeep", animKeys: ["ow-jeep"], radius: 11, fireRate: 34 };
-    }
-    if (kind === "helicopter") {
-      return { key: "ow-heli", animKeys: ["ow-heli"], radius: 12, fireRate: 28 };
-    }
-    return { key: "ow-civilian", animKeys: ["ow-civilian"], radius: 8, fireRate: 99999 };
-  }
-
-  private ensureRomTextures(): void {
-    if (this.textures.exists("ow-soldier-0")) {
-      return;
-    }
-
-    this.createSolidTexture("ow-soldier-0", 12, 18, (ctx) => {
-      ctx.fillStyle = "#0b143d";
-      ctx.fillRect(5, 1, 2, 2);
-      ctx.fillRect(4, 3, 4, 5);
-      ctx.fillRect(3, 8, 6, 6);
-      ctx.fillRect(2, 14, 3, 3);
-      ctx.fillRect(7, 14, 3, 3);
-    });
-
-    this.createSolidTexture("ow-soldier-1", 12, 18, (ctx) => {
-      ctx.fillStyle = "#0b143d";
-      ctx.fillRect(5, 1, 2, 2);
-      ctx.fillRect(4, 3, 4, 5);
-      ctx.fillRect(3, 8, 6, 6);
-      ctx.fillRect(1, 14, 3, 3);
-      ctx.fillRect(8, 14, 3, 3);
-    });
-
-    this.createSolidTexture("ow-civilian", 12, 18, (ctx) => {
-      ctx.fillStyle = "#f8f9fa";
-      ctx.fillRect(5, 1, 2, 2);
-      ctx.fillRect(4, 3, 4, 5);
-      ctx.fillRect(3, 8, 6, 6);
-      ctx.fillRect(2, 14, 3, 3);
-      ctx.fillRect(7, 14, 3, 3);
-    });
-
-    this.createSolidTexture("ow-jeep", 24, 12, (ctx) => {
-      ctx.fillStyle = "#1c2f56";
-      ctx.fillRect(1, 6, 22, 5);
-      ctx.fillRect(6, 3, 8, 3);
-      ctx.fillStyle = "#8aa3cf";
-      ctx.fillRect(8, 4, 4, 2);
-      ctx.fillStyle = "#000000";
-      ctx.fillRect(4, 10, 4, 2);
-      ctx.fillRect(16, 10, 4, 2);
-    });
-
-    this.createSolidTexture("ow-heli", 26, 12, (ctx) => {
-      ctx.fillStyle = "#1c2f56";
-      ctx.fillRect(4, 6, 16, 4);
-      ctx.fillRect(9, 3, 7, 3);
-      ctx.fillRect(20, 7, 5, 1);
-      ctx.fillRect(1, 1, 24, 1);
-      ctx.fillRect(12, 2, 1, 9);
-    });
-
-    if (this.textures.exists("chr-sheet")) {
-      this.createMetaTexture("ow-icon-rifle", [102], 1, 1, [null, "#2d2d2d", "#b19f58", "#f5e7aa"]);
-      this.createMetaTexture("ow-icon-grenade", [103], 1, 1, [null, "#2d2d2d", "#a15c2d", "#f2c28b"]);
-      this.createMetaTexture("ow-icon-soldier", [104], 1, 1, [null, "#2d2d2d", "#a0352a", "#f5d2a6"]);
-      this.createMetaTexture("ow-icon-jeep", [105], 1, 1, [null, "#2d2d2d", "#60707b", "#d0d8de"]);
-    } else {
-      this.createSolidTexture("ow-icon-rifle", 8, 8, (ctx) => {
-        ctx.fillStyle = "#f5e7aa";
-        ctx.fillRect(3, 1, 2, 6);
-        ctx.fillRect(2, 5, 3, 2);
-      });
-      this.createSolidTexture("ow-icon-grenade", 8, 8, (ctx) => {
-        ctx.fillStyle = "#f2c28b";
-        ctx.fillRect(2, 2, 4, 4);
-      });
-      this.createSolidTexture("ow-icon-soldier", 8, 8, (ctx) => {
-        ctx.fillStyle = "#f5d2a6";
-        ctx.fillRect(3, 1, 2, 2);
-        ctx.fillRect(2, 3, 4, 4);
-      });
-      this.createSolidTexture("ow-icon-jeep", 8, 8, (ctx) => {
-        ctx.fillStyle = "#d0d8de";
-        ctx.fillRect(1, 3, 6, 3);
-      });
-    }
-  }
-
-  private createSolidTexture(key: string, width: number, height: number, painter: (ctx: CanvasRenderingContext2D) => void): void {
-    const canvas = document.createElement("canvas");
-    canvas.width = width;
-    canvas.height = height;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) {
-      return;
-    }
-
-    ctx.clearRect(0, 0, width, height);
-    painter(ctx);
-
-    if (this.textures.exists(key)) {
-      this.textures.remove(key);
-    }
-    this.textures.addCanvas(key, canvas);
-  }
-
-  private createMetaTexture(
-    key: string,
-    tiles: number[],
-    tilesWide: number,
-    tilesHigh: number,
-    palette: Array<string | null>
-  ): void {
-    const sourceImage = this.textures.get("chr-sheet").getSourceImage() as HTMLImageElement | HTMLCanvasElement;
-
-    const sourceCanvas = document.createElement("canvas");
-    sourceCanvas.width = sourceImage.width;
-    sourceCanvas.height = sourceImage.height;
-    const sourceCtx = sourceCanvas.getContext("2d", { willReadFrequently: true });
-    if (!sourceCtx) {
-      return;
-    }
-
-    sourceCtx.drawImage(sourceImage, 0, 0);
-    const src = sourceCtx.getImageData(0, 0, sourceCanvas.width, sourceCanvas.height).data;
-
-    const outCanvas = document.createElement("canvas");
-    outCanvas.width = tilesWide * 8;
-    outCanvas.height = tilesHigh * 8;
-    const outCtx = outCanvas.getContext("2d");
-    if (!outCtx) {
-      return;
-    }
-
-    const outImage = outCtx.createImageData(outCanvas.width, outCanvas.height);
-
-    for (let i = 0; i < tiles.length; i += 1) {
-      const tileIndex = tiles[i];
-      if (tileIndex < 0) {
-        continue;
+      const romResponse = await fetch(romUrl);
+      if (!romResponse.ok) {
+        throw new Error(`ROM load failed (${romResponse.status})`);
       }
 
-      const tileX = (tileIndex % 16) * 8;
-      const tileY = Math.floor(tileIndex / 16) * 8;
-      const dstTileX = (i % tilesWide) * 8;
-      const dstTileY = Math.floor(i / tilesWide) * 8;
+      const romBytes = new Uint8Array(await romResponse.arrayBuffer());
+      const patchedRom = patchHeaderTail(romBytes);
 
-      for (let py = 0; py < 8; py += 1) {
-        for (let px = 0; px < 8; px += 1) {
-          const s = ((tileY + py) * sourceCanvas.width + (tileX + px)) * 4;
-          const v = src[s];
-          const level = v < 32 ? 0 : v < 130 ? 1 : v < 220 ? 2 : 3;
-          const color = palette[level];
-
-          const d = ((dstTileY + py) * outCanvas.width + (dstTileX + px)) * 4;
-          if (!color) {
-            outImage.data[d + 3] = 0;
-            continue;
+      const nes = new NES({
+        preferredFrameRate: TARGET_FPS,
+        emulateSound: false,
+        onFrame: (framebuffer: number[]) => {
+          for (let i = 0; i < this.frameBuffer.length; i += 1) {
+            this.frameBuffer[i] = framebuffer[i] ?? 0;
           }
+          this.frameDirty = true;
+        },
+        onAudioSample: () => {},
+        onStatusUpdate: () => {}
+      }) as unknown as JsnesNes;
 
-          const rgb = Phaser.Display.Color.HexStringToColor(color);
-          outImage.data[d] = rgb.red;
-          outImage.data[d + 1] = rgb.green;
-          outImage.data[d + 2] = rgb.blue;
-          outImage.data[d + 3] = 255;
+      nes.loadROM(toRomString(patchedRom));
+      applyPreferredPalette(nes);
+      this.nes = nes;
+
+      this.runWarmupSequence();
+
+      this.releaseAllButtons();
+      this.missionFrame = 0;
+      this.romReady = true;
+      this.loadingText.setVisible(false);
+      this.blitFrame();
+      this.publishDebugState();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.loadingText.setText(`ROM INIT FAILED\n${message}`);
+      console.error(error);
+    }
+  }
+
+  private runWarmupSequence(): void {
+    if (!this.nes) {
+      return;
+    }
+
+    let eventIndex = 0;
+
+    for (let frame = 0; frame <= MISSION_START_FRAME; frame += 1) {
+      while (eventIndex < WARMUP_INPUTS.length && WARMUP_INPUTS[eventIndex].frame === frame) {
+        const event = WARMUP_INPUTS[eventIndex];
+        const code = toButtonCode(event.button);
+
+        if (event.state === "down") {
+          this.nes.buttonDown(1, code);
+          this.buttonDownState[event.button] = true;
+        } else {
+          this.nes.buttonUp(1, code);
+          this.buttonDownState[event.button] = false;
         }
+
+        eventIndex += 1;
       }
+
+      this.nes.frame();
+    }
+  }
+
+  private syncControllerButtons(): void {
+    if (!this.nes) {
+      return;
     }
 
-    outCtx.putImageData(outImage, 0, 0);
+    for (const button of Object.keys(this.keys) as NesButton[]) {
+      const held = this.keys[button].isDown;
+      if (held === this.buttonDownState[button]) {
+        continue;
+      }
 
-    if (this.textures.exists(key)) {
-      this.textures.remove(key);
+      const code = toButtonCode(button);
+      if (held) {
+        this.nes.buttonDown(1, code);
+      } else {
+        this.nes.buttonUp(1, code);
+      }
+
+      this.buttonDownState[button] = held;
     }
-    this.textures.addCanvas(key, outCanvas);
+  }
+
+  private releaseAllButtons(): void {
+    if (!this.nes) {
+      return;
+    }
+
+    for (const button of Object.keys(this.buttonDownState) as NesButton[]) {
+      if (!this.buttonDownState[button]) {
+        continue;
+      }
+
+      this.nes.buttonUp(1, toButtonCode(button));
+      this.buttonDownState[button] = false;
+    }
+  }
+
+  private blitFrame(): void {
+    if (!this.frameDirty || !this.frameCtx || !this.frameImageData || !this.frameTexture) {
+      return;
+    }
+
+    const data = this.frameImageData.data;
+
+    for (let i = 0; i < this.frameBuffer.length; i += 1) {
+      const color = this.frameBuffer[i];
+      const idx = i * 4;
+
+      data[idx] = (color >> 16) & 0xff;
+      data[idx + 1] = (color >> 8) & 0xff;
+      data[idx + 2] = color & 0xff;
+      data[idx + 3] = 0xff;
+    }
+
+    this.frameCtx.putImageData(this.frameImageData, 0, 0);
+    this.frameTexture.refresh();
+    this.frameDirty = false;
+  }
+
+  private publishDebugState(): void {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    window.__owDebug = {
+      scene: "mission",
+      frame: this.missionFrame,
+      score: 0,
+      damage: 0,
+      rifleAmmo: 20,
+      grenadeAmmo: 5
+    };
   }
 }

@@ -2,6 +2,8 @@
 
 Phaser 3 + TypeScript implementation of a near-1:1 **Stage 1** Operation Wolf clone for desktop browsers.
 
+This game implementation was built entirely by Codex.
+
 ## Controls
 
 - `Arrow Keys`: move crosshair

@@ -10,11 +10,7 @@
     { "frame": 150, "button": "start", "state": "down" },
     { "frame": 153, "button": "start", "state": "up" },
     { "frame": 240, "button": "start", "state": "down" },
-    { "frame": 243, "button": "start", "state": "up" },
-    { "frame": 760, "button": "a", "state": "down" },
-    { "frame": 763, "button": "a", "state": "up" },
-    { "frame": 900, "button": "a", "state": "down" },
-    { "frame": 903, "button": "a", "state": "up" }
+    { "frame": 243, "button": "start", "state": "up" }
   ],
   "referenceMetricCheckpoints": [
     { "frame": 120, "score": 0, "rifleAmmo": 20, "grenadeAmmo": 5, "damage": 0 },

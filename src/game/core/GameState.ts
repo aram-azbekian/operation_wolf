@@ -1,4 +1,4 @@
-import { MAX_DAMAGE } from "../data/constants";
+import { MAX_DAMAGE, WEAPONS } from "../data/constants";
 import type { GameOutcome, HudState, WeaponKind } from "../types";
 
 export class GameState {
@@ -51,7 +51,16 @@ export class GameState {
     this.civiliansLost += 1;
   }
 
-  public toHudState(enemiesRemaining: number): HudState {
+  public grantAmmo(kind: WeaponKind, amount: number): void {
+    if (kind === "rifle") {
+      this.rifleAmmo = Math.min(WEAPONS.rifle.ammoCap, this.rifleAmmo + amount);
+      return;
+    }
+
+    this.grenadeAmmo = Math.min(WEAPONS.grenade.ammoCap, this.grenadeAmmo + amount);
+  }
+
+  public toHudState(enemiesRemaining: number, vehiclesRemaining: number): HudState {
     return {
       score: this.score,
       rifleAmmo: this.rifleAmmo,
@@ -59,6 +68,7 @@ export class GameState {
       civiliansLost: this.civiliansLost,
       damagePercent: this.damage,
       enemiesRemaining,
+      vehiclesRemaining,
       frame: this.frame
     };
   }

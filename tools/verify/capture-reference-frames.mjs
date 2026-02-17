@@ -60,6 +60,8 @@ const nes = new NES({
 });
 
 nes.loadROM(toPatchedRomString(romBuffer));
+nes.ppu.palTable.loadDefaultPalette();
+nes.ppu.updatePalettes();
 
 for (let frame = 0; frame <= maxFrame; frame += 1) {
   for (const event of profile.referenceInputEvents) {

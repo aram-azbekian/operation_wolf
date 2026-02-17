@@ -49,6 +49,7 @@ export type HudState = {
   civiliansLost: number;
   damagePercent: number;
   enemiesRemaining: number;
+  vehiclesRemaining: number;
   frame: number;
 };
 
