@@ -11,3 +11,4 @@ verification/diff/*.png
 verification/diff/summary.json
 verification/diff/metrics-summary.json
 public/generated/chr-pages/
+screenshots/
