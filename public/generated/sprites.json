@@ -1,0 +1,10 @@
+{
+  "generatedAt": "2026-02-17T14:58:51.569Z",
+  "romPath": "rom/operation_wolf_rom.nes",
+  "mapper": 33,
+  "prgBanks": 8,
+  "chrBanks": 16,
+  "mirroring": "horizontal",
+  "tileCount": 8192,
+  "spriteSheet": "chr-sheet.png"
+}

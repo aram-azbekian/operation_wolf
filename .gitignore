@@ -1,0 +1,13 @@
+node_modules/
+dist/
+coverage/
+.vite/
+.DS_Store
+verification/reference/*.png
+verification/reference/manifest.json
+verification/candidate/*.png
+verification/candidate/manifest.json
+verification/diff/*.png
+verification/diff/summary.json
+verification/diff/metrics-summary.json
+public/generated/chr-pages/

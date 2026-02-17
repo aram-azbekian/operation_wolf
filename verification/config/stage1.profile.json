@@ -1,0 +1,33 @@
+{
+  "name": "stage1_opening",
+  "romPath": "rom/operation_wolf_rom.nes",
+  "candidateUrl": "http://127.0.0.1:4173/",
+  "candidateCaptureFrames": [120, 180, 240, 300],
+  "referenceMissionStartFrame": 1560,
+  "referenceInputEvents": [
+    { "frame": 90, "button": "start", "state": "down" },
+    { "frame": 93, "button": "start", "state": "up" },
+    { "frame": 150, "button": "start", "state": "down" },
+    { "frame": 153, "button": "start", "state": "up" },
+    { "frame": 240, "button": "start", "state": "down" },
+    { "frame": 243, "button": "start", "state": "up" },
+    { "frame": 760, "button": "a", "state": "down" },
+    { "frame": 763, "button": "a", "state": "up" },
+    { "frame": 900, "button": "a", "state": "down" },
+    { "frame": 903, "button": "a", "state": "up" }
+  ],
+  "referenceMetricCheckpoints": [
+    { "frame": 120, "score": 0, "rifleAmmo": 20, "grenadeAmmo": 5, "damage": 0 },
+    { "frame": 180, "score": 0, "rifleAmmo": 20, "grenadeAmmo": 5, "damage": 0 },
+    { "frame": 240, "score": 0, "rifleAmmo": 20, "grenadeAmmo": 5, "damage": 0 },
+    { "frame": 300, "score": 0, "rifleAmmo": 20, "grenadeAmmo": 5, "damage": 0 }
+  ],
+  "diffThreshold": 0.12,
+  "maxDiffRatio": 0.55,
+  "maxMetricDelta": {
+    "score": 0,
+    "rifleAmmo": 0,
+    "grenadeAmmo": 0,
+    "damage": 2
+  }
+}

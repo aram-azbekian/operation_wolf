@@ -1,0 +1,31 @@
+{
+  "name": "operation-wolf-clone",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "extract-assets": "node tools/extract-rom-assets.mjs",
+    "verify:reference": "node tools/verify/capture-reference-frames.mjs",
+    "verify:candidate": "node tools/verify/capture-candidate-frames.mjs",
+    "verify:diff": "node tools/verify/compare-frames.mjs",
+    "verify:metrics": "node tools/verify/compare-metrics.mjs",
+    "verify:fidelity": "node tools/verify/run-fidelity-check.mjs"
+  },
+  "dependencies": {
+    "jsnes": "^1.2.1",
+    "phaser": "^3.90.0",
+    "pixelmatch": "^7.1.0",
+    "pngjs": "^7.0.0",
+    "playwright": "^1.53.2"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.8.0",
+    "vite": "^7.0.0",
+    "vitest": "^3.0.0"
+  }
+}
