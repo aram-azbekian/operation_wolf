@@ -2,15 +2,11 @@ import Phaser from "phaser";
 import { Controller, NES } from "jsnes";
 import mappers from "jsnes/src/mappers";
 import romUrl from "../../../rom/operation_wolf_rom.nes?url";
+import { StereoSampleRingBuffer } from "../audio/StereoSampleRingBuffer";
 import { GAME_HEIGHT, GAME_WIDTH, TARGET_FPS } from "../data/constants";
+import { MISSION_START_FRAME, WARMUP_INPUTS } from "../data/missionWarmup";
 
 type NesButton = "a" | "b" | "select" | "start" | "up" | "down" | "left" | "right";
-
-type WarmupEvent = {
-  frame: number;
-  button: NesButton;
-  state: "down" | "up";
-};
 
 type JsnesNes = {
   frame: () => void;
@@ -25,12 +21,8 @@ type JsnesNes = {
   };
 };
 
-const MISSION_START_FRAME = 240;
-
-const WARMUP_INPUTS: WarmupEvent[] = [
-  { frame: 181, button: "start", state: "down" },
-  { frame: 184, button: "start", state: "up" }
-];
+const AUDIO_RING_SIZE = 32768;
+const AUDIO_PROCESS_BUFFER_SIZE = 1024;
 
 let mapper33Installed = false;
 const mapperTable = mappers as any;
@@ -163,6 +155,9 @@ export class MissionScene extends Phaser.Scene {
   private romReady = false;
 
   private keys!: Record<NesButton, Phaser.Input.Keyboard.Key>;
+  private audioContext: AudioContext | null = null;
+  private audioNode: ScriptProcessorNode | null = null;
+  private readonly audioRing = new StereoSampleRingBuffer(AUDIO_RING_SIZE);
 
   private readonly buttonDownState: Record<NesButton, boolean> = {
     a: false,
@@ -184,6 +179,7 @@ export class MissionScene extends Phaser.Scene {
 
     this.createFrameSurface();
     this.bindKeyboard();
+    this.setupAudioOutput();
 
     this.loadingText = this.add
       .text(GAME_WIDTH / 2, GAME_HEIGHT / 2, "LOADING ROM...", {
@@ -200,6 +196,7 @@ export class MissionScene extends Phaser.Scene {
 
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.releaseAllButtons();
+      this.teardownAudioOutput();
       this.nes = null;
     });
   }
@@ -270,17 +267,21 @@ export class MissionScene extends Phaser.Scene {
 
       const romBytes = new Uint8Array(await romResponse.arrayBuffer());
       const patchedRom = patchHeaderTail(romBytes);
+      const audioEnabled = this.audioContext !== null;
 
       const nes = new NES({
         preferredFrameRate: TARGET_FPS,
-        emulateSound: false,
+        sampleRate: this.audioContext?.sampleRate ?? 44100,
+        emulateSound: audioEnabled,
         onFrame: (framebuffer: number[]) => {
           for (let i = 0; i < this.frameBuffer.length; i += 1) {
             this.frameBuffer[i] = framebuffer[i] ?? 0;
           }
           this.frameDirty = true;
         },
-        onAudioSample: () => {},
+        onAudioSample: (left: number, right: number) => {
+          this.queueAudioSample(left, right);
+        },
         onStatusUpdate: () => {}
       }) as unknown as JsnesNes;
 
@@ -289,6 +290,7 @@ export class MissionScene extends Phaser.Scene {
       this.nes = nes;
 
       this.runWarmupSequence();
+      this.audioRing.clear();
 
       this.releaseAllButtons();
       this.missionFrame = 0;
@@ -333,6 +335,10 @@ export class MissionScene extends Phaser.Scene {
   private syncControllerButtons(): void {
     if (!this.nes) {
       return;
+    }
+
+    if (Object.values(this.keys).some((key) => key.isDown)) {
+      this.tryResumeAudioOutput();
     }
 
     for (const button of Object.keys(this.keys) as NesButton[]) {
@@ -402,5 +408,63 @@ export class MissionScene extends Phaser.Scene {
       rifleAmmo: 20,
       grenadeAmmo: 5
     };
+  }
+
+  private setupAudioOutput(): void {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const AudioContextCtor =
+      window.AudioContext ??
+      ((window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext ?? null);
+
+    if (!AudioContextCtor) {
+      return;
+    }
+
+    this.audioContext = new AudioContextCtor();
+    this.audioNode = this.audioContext.createScriptProcessor(AUDIO_PROCESS_BUFFER_SIZE, 0, 2);
+    this.audioNode.onaudioprocess = (event: AudioProcessingEvent) => {
+      const outL = event.outputBuffer.getChannelData(0);
+      const outR = event.outputBuffer.getChannelData(1);
+      this.audioRing.fillChannels(outL, outR);
+    };
+    this.audioNode.connect(this.audioContext.destination);
+
+    this.input.on("pointerdown", this.tryResumeAudioOutput, this);
+    this.input.keyboard?.on("keydown", this.tryResumeAudioOutput, this);
+  }
+
+  private teardownAudioOutput(): void {
+    this.input.off("pointerdown", this.tryResumeAudioOutput, this);
+    this.input.keyboard?.off("keydown", this.tryResumeAudioOutput, this);
+
+    if (this.audioNode) {
+      this.audioNode.disconnect();
+      this.audioNode.onaudioprocess = null;
+      this.audioNode = null;
+    }
+
+    if (this.audioContext) {
+      void this.audioContext.close();
+      this.audioContext = null;
+    }
+
+    this.audioRing.clear();
+  }
+
+  private tryResumeAudioOutput(): void {
+    if (!this.audioContext || this.audioContext.state !== "suspended") {
+      return;
+    }
+    void this.audioContext.resume();
+  }
+
+  private queueAudioSample(left: number, right: number): void {
+    if (!this.audioContext) {
+      return;
+    }
+    this.audioRing.push(left, right);
   }
 }

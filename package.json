@@ -8,6 +8,7 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "test": "vitest run",
+    "test:title-flow": "node tools/tests/run-title-start-menu-test.mjs",
     "extract-assets": "node tools/extract-rom-assets.mjs",
     "verify:reference": "node tools/verify/capture-reference-frames.mjs",
     "verify:candidate": "node tools/verify/capture-candidate-frames.mjs",

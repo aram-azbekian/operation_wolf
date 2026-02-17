@@ -24,6 +24,7 @@ npm run dev
 ```bash
 npm run test
 npm run build
+npm run test:title-flow
 ```
 
 ## ROM asset extraction (build-time)
