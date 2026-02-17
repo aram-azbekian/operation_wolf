@@ -27,6 +27,18 @@ npm run build
 npm run test:title-flow
 ```
 
+## Deploy to GitHub Pages
+
+This repo includes a GitHub Actions workflow at `.github/workflows/deploy-pages.yml`
+that publishes `dist/` on every push to `main`.
+
+For this repository (`aram-azbekian/operation_wolf`), the public URL is:
+
+`https://aram-azbekian.github.io/operation_wolf/`
+
+In GitHub repo settings, make sure Pages is configured to use **GitHub Actions**
+as the source.
+
 ## ROM asset extraction (build-time)
 
 1. Place ROM locally (example: `rom/operation_wolf_rom.nes`)
